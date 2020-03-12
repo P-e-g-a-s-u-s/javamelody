@@ -28,6 +28,7 @@ import net.bull.javamelody.internal.common.Parameters;
 import net.bull.javamelody.internal.model.Counter;
 import net.bull.javamelody.internal.model.CounterRequest;
 import net.bull.javamelody.internal.model.JobInformations;
+import net.bull.javamelody.internal.model.JobTriggerInformations;
 
 /**
  * Partie du rapport html pour les jobs.
@@ -54,7 +55,7 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 	@Override
 	void toHtml() throws IOException {
 		final HtmlTable table = new HtmlTable();
-		table.beginTable(getString("Jobs"));
+		table.beginTable(getString("Jobs"), true);
 		write("<th>#JobGroup#</th>");
 		write("<th>#JobName#</th>");
 		write("<th>#JobClassName#</th>");
@@ -71,7 +72,7 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 		}
 		for (final JobInformations jobInformations : jobInformationsList) {
 			table.nextRow();
-			writeJobInformations(jobInformations);
+			writeJobInformations(jobInformations, table);
 		}
 		table.endTable();
 		write("<div align='right' class='noPrint'>");
@@ -97,7 +98,8 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 		writeln("</div>");
 	}
 
-	private void writeJobInformations(JobInformations jobInformations) throws IOException {
+	private void writeJobInformations(JobInformations jobInformations, HtmlTable table)
+			throws IOException {
 		write("<td>");
 		final String nextColumnAlignRight = "</td> <td align='right'>";
 		writeDirectly(htmlEncodeButNotSpace(jobInformations.getGroup()));
@@ -131,6 +133,38 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 			writePauseJobAndResumeJobLinks(jobInformations);
 		}
 		write("</td>");
+
+		//triggers
+		for (JobTriggerInformations jobTriggerInformations : jobInformations
+				.getTriggerInformations()) {
+			table.nextRow();
+			write("<td>");
+			writeDirectly(htmlEncodeButNotSpace("[T]->" + jobTriggerInformations.getGroup()));
+			write("</td> <td>");
+			writeNameWithDescription(jobTriggerInformations);
+			write("</td> <td>");
+			//writeDirectly(htmlEncodeButNotSpace(""));
+
+			// counterRequest ne peut pas être null ici
+			write("</td> <td align='center'>");
+			write("</td><td>&nbsp;");
+			// rq: on n'affiche pas le maximum, l'écart-type ou le pourcentage d'erreurs,
+			// uniquement car cela ferait trop de colonnes dans la page
+
+			writeJobTimes(jobTriggerInformations, counterRequest);
+
+			write("</td> <td align='center'>");
+			if (jobInformations.isPaused()) {
+				write("#oui#");
+			} else {
+				write("#non#");
+			}
+			if (systemActionsEnabled) {
+				write("</td><td></td><td>");
+			}
+			write("</td>");
+		}
+
 	}
 
 	private String formatDuration(int durationAsMillis) {
@@ -147,6 +181,19 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 			writeDirectly(htmlEncodeButNotSpace(jobInformations.getDescription()));
 			writeln("</em>");
 			writeDirectly(htmlEncodeButNotSpace(jobInformations.getName()));
+			writeln("</a>");
+		}
+	}
+
+	private void writeNameWithDescription(JobTriggerInformations jobTriggerInformations)
+			throws IOException {
+		if (jobTriggerInformations.getDescription() == null) {
+			writeDirectly(htmlEncodeButNotSpace(jobTriggerInformations.getName()));
+		} else {
+			write("<a class='tooltip'><em>");
+			writeDirectly(htmlEncodeButNotSpace(jobTriggerInformations.getDescription()));
+			writeln("</em>");
+			writeDirectly(htmlEncodeButNotSpace(jobTriggerInformations.getName()));
 			writeln("</a>");
 		}
 	}
@@ -171,13 +218,13 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 		final String nextColumnAlignRight = "</td> <td align='right'>";
 		final String nbsp = "&nbsp;";
 		write(nextColumnAlignRight);
-		if (jobInformations.getElapsedTime() >= 0) {
-			write(durationFormat.format(new Date(jobInformations.getElapsedTime())));
-			write("<br/>");
-			writeln(toBar(counterRequest.getMean(), jobInformations.getElapsedTime()));
-		} else {
-			write(nbsp);
-		}
+		//		if (jobInformations.getElapsedTime() >= 0) {
+		//			write(durationFormat.format(new Date(jobInformations.getElapsedTime())));
+		//			write("<br/>");
+		//			writeln(toBar(counterRequest.getMean(), jobInformations.getElapsedTime()));
+		//		} else {
+		write(nbsp);
+		//		}
 		write(nextColumnAlignRight);
 		if (jobInformations.getPreviousFireTime() != null) {
 			write(fireTimeFormat.format(jobInformations.getPreviousFireTime()));
@@ -191,13 +238,50 @@ class HtmlJobInformationsReport extends HtmlAbstractReport {
 			write(nbsp);
 		}
 		write(nextColumnAlignRight);
+		//		// on n'affiche pas la période si >= 1 jour car ce formateur ne saurait pas l'afficher
+		//		if (jobInformations.getRepeatInterval() > 0
+		//				&& jobInformations.getRepeatInterval() < ONE_DAY_MILLIS) {
+		//			write(durationFormat.format(new Date(jobInformations.getRepeatInterval())));
+		//		} else if (jobInformations.getCronExpression() != null) {
+		//			// writeDirectly pour ne pas gérer de traductions si l'expression contient '#'
+		//			writeDirectly(htmlEncodeButNotSpace(jobInformations.getCronExpression()));
+		//		} else {
+		write(nbsp);
+		//		}
+	}
+
+	private void writeJobTimes(JobTriggerInformations jobTriggerInformations,
+			CounterRequest counterRequest) throws IOException {
+		final String nextColumnAlignRight = "</td> <td align='right'>";
+		final String nbsp = "&nbsp;";
+		write(nextColumnAlignRight);
+		if (jobTriggerInformations.getElapsedTime() >= 0) {
+			write(durationFormat.format(new Date(jobTriggerInformations.getElapsedTime())));
+			write("<br/>");
+			writeln(toBar(counterRequest.getMean(), jobTriggerInformations.getElapsedTime()));
+		} else {
+			write(nbsp);
+		}
+		write(nextColumnAlignRight);
+		if (jobTriggerInformations.getPreviousFireTime() != null) {
+			write(fireTimeFormat.format(jobTriggerInformations.getPreviousFireTime()));
+		} else {
+			write(nbsp);
+		}
+		write(nextColumnAlignRight);
+		if (jobTriggerInformations.getNextFireTime() != null) {
+			write(fireTimeFormat.format(jobTriggerInformations.getNextFireTime()));
+		} else {
+			write(nbsp);
+		}
+		write(nextColumnAlignRight);
 		// on n'affiche pas la période si >= 1 jour car ce formateur ne saurait pas l'afficher
-		if (jobInformations.getRepeatInterval() > 0
-				&& jobInformations.getRepeatInterval() < ONE_DAY_MILLIS) {
-			write(durationFormat.format(new Date(jobInformations.getRepeatInterval())));
-		} else if (jobInformations.getCronExpression() != null) {
+		if (jobTriggerInformations.getRepeatInterval() > 0
+				&& jobTriggerInformations.getRepeatInterval() < ONE_DAY_MILLIS) {
+			write(durationFormat.format(new Date(jobTriggerInformations.getRepeatInterval())));
+		} else if (jobTriggerInformations.getCronExpression() != null) {
 			// writeDirectly pour ne pas gérer de traductions si l'expression contient '#'
-			writeDirectly(htmlEncodeButNotSpace(jobInformations.getCronExpression()));
+			writeDirectly(htmlEncodeButNotSpace(jobTriggerInformations.getCronExpression()));
 		} else {
 			write(nbsp);
 		}

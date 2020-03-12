@@ -50,6 +50,18 @@ public abstract class HtmlAbstractReport {
 			writeDirectly("<thead><tr>");
 		}
 
+		void beginTable(String summary, boolean isNotSortable) throws IOException {
+			if (isNotSortable == true) {
+				writeDirectly("<table width='100%' border='1' summary='");
+			} else {
+				writeDirectly("<table class='sortable' width='100%' border='1' summary='");
+
+			}
+			writeDirectly(summary);
+			writeDirectly("'>\n");
+			writeDirectly("<thead><tr>");
+		}
+
 		void nextRow() throws IOException {
 			writeDirectly("</tr>");
 			if (firstRow) {

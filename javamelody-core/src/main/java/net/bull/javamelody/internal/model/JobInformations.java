@@ -25,12 +25,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.quartz.CronTrigger;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
-import org.quartz.SimpleTrigger;
 import org.quartz.Trigger;
 import org.quartz.impl.SchedulerRepository;
 
@@ -60,8 +58,9 @@ public class JobInformations implements Serializable {
 	private final String cronExpression;
 	private final boolean paused;
 	private final String globalJobId;
+	private final List<JobTriggerInformations> triggerInformations;
 
-	JobInformations(JobDetail jobDetail, JobExecutionContext jobExecutionContext,
+	JobInformations(JobDetail jobDetail, Map<String, JobExecutionContext> jobExecutionContexts,
 			Scheduler scheduler) throws SchedulerException {
 		// pas throws SchedulerException ici sinon NoClassDefFoundError
 		super();
@@ -73,62 +72,53 @@ public class JobInformations implements Serializable {
 		this.name = quartzAdapter.getJobName(jobDetail);
 		this.description = quartzAdapter.getJobDescription(jobDetail);
 		this.jobClassName = quartzAdapter.getJobClass(jobDetail).getName();
-		if (jobExecutionContext == null) {
-			elapsedTime = -1;
-		} else {
-			elapsedTime = System.currentTimeMillis()
-					- quartzAdapter.getContextFireTime(jobExecutionContext).getTime();
-		}
-		final List<Trigger> triggers = quartzAdapter.getTriggersOfJob(jobDetail, scheduler);
-		this.previousFireTime = getPreviousFireTime(triggers);
-		this.nextFireTime = getNextFireTime(triggers);
+		this.triggerInformations = new ArrayList<JobTriggerInformations>();
 
-		String cronTriggerExpression = null;
-		long simpleTriggerRepeatInterval = -1;
-		boolean jobPaused = true;
+		final List<Trigger> triggers = quartzAdapter.getTriggersOfJob(jobDetail, scheduler);
+		boolean groupJobPaused = true;
+		Date groupPreviousFireTime = null;
+		Date groupNextFireTime = null;
+		long groupElapsedTime = -1;
+		long groupRepeatInterval = -1;
+		String groupCronExpression = null;
 		for (final Trigger trigger : triggers) {
-			if (trigger instanceof CronTrigger) {
-				cronTriggerExpression = quartzAdapter
-						.getCronTriggerExpression((CronTrigger) trigger);
-			} else if (trigger instanceof SimpleTrigger) {
-				simpleTriggerRepeatInterval = quartzAdapter
-						.getSimpleTriggerRepeatInterval((SimpleTrigger) trigger);
+			final String jobAndTriggerId = quartzAdapter.getJobAndTriggerId(trigger);
+			final JobExecutionContext jobExecutionContext = jobExecutionContexts
+					.get(jobAndTriggerId);
+			final JobTriggerInformations jobTriggerInformations = new JobTriggerInformations(
+					scheduler, trigger, jobExecutionContext);
+
+			this.triggerInformations.add(jobTriggerInformations);
+
+			if (groupPreviousFireTime == null
+					|| jobTriggerInformations.getPreviousFireTime() != null && groupPreviousFireTime
+							.before(jobTriggerInformations.getPreviousFireTime())) {
+				groupPreviousFireTime = jobTriggerInformations.getPreviousFireTime();
 			}
-			jobPaused = jobPaused && quartzAdapter.isTriggerPaused(trigger, scheduler);
+			if (groupNextFireTime == null || jobTriggerInformations.getNextFireTime() != null
+					&& groupNextFireTime.after(jobTriggerInformations.getNextFireTime())) {
+				groupNextFireTime = jobTriggerInformations.getNextFireTime();
+			}
+			groupJobPaused = groupJobPaused && jobTriggerInformations.isPaused();
+			groupElapsedTime = Math.max(groupElapsedTime, jobTriggerInformations.getElapsedTime());
+			if (jobTriggerInformations.getRepeatInterval() != -1) {
+				groupRepeatInterval = jobTriggerInformations.getRepeatInterval();
+			}
+			if (jobTriggerInformations.getCronExpression() != null) {
+				groupCronExpression = jobTriggerInformations.getCronExpression();
+			}
 		}
-		this.repeatInterval = simpleTriggerRepeatInterval;
-		this.cronExpression = cronTriggerExpression;
-		this.paused = jobPaused;
+
+		this.previousFireTime = groupPreviousFireTime;
+		this.nextFireTime = groupNextFireTime;
+		this.paused = groupJobPaused;
+		this.elapsedTime = groupElapsedTime;
+		this.repeatInterval = groupRepeatInterval;
+		this.cronExpression = groupCronExpression;
+
 		this.globalJobId = PID.getPID() + '_' + Parameters.getHostAddress() + '_'
 				+ quartzAdapter.getJobFullName(jobDetail).hashCode();
-	}
 
-	private Date getNextFireTime(List<Trigger> triggers) {
-		final QuartzAdapter quartzAdapter = QuartzAdapter.getSingleton();
-		Date myNextFireTime = null;
-		for (final Trigger trigger : triggers) {
-			// beware of #648 for getTriggerNextFireTime
-			final Date triggerNextFireTime = quartzAdapter.getTriggerNextFireTime(trigger);
-			if (myNextFireTime == null
-					|| triggerNextFireTime != null && myNextFireTime.after(triggerNextFireTime)) {
-				myNextFireTime = triggerNextFireTime;
-			}
-		}
-		return myNextFireTime;
-	}
-
-	private Date getPreviousFireTime(List<Trigger> triggers) {
-		final QuartzAdapter quartzAdapter = QuartzAdapter.getSingleton();
-		Date myPreviousFireTime = null;
-		for (final Trigger trigger : triggers) {
-			// beware of #648 for getTriggerPreviousFireTime
-			final Date triggerPreviousFireTime = quartzAdapter.getTriggerPreviousFireTime(trigger);
-			if (myPreviousFireTime == null || triggerPreviousFireTime != null
-					&& myPreviousFireTime.before(triggerPreviousFireTime)) {
-				myPreviousFireTime = triggerPreviousFireTime;
-			}
-		}
-		return myPreviousFireTime;
 	}
 
 	private static boolean isQuartzAvailable() {
@@ -150,21 +140,18 @@ public class JobInformations implements Serializable {
 		try {
 			final QuartzAdapter quartzAdapter = QuartzAdapter.getSingleton();
 			for (final Scheduler scheduler : getAllSchedulers()) {
-				final Map<String, JobExecutionContext> currentlyExecutingJobsByFullName = new LinkedHashMap<String, JobExecutionContext>();
+				final Map<String, JobExecutionContext> currentlyExecutingJobsByContextId = new LinkedHashMap<String, JobExecutionContext>();
 				for (final JobExecutionContext currentlyExecutingJob : (List<JobExecutionContext>) scheduler
 						.getCurrentlyExecutingJobs()) {
-					final JobDetail jobDetail = quartzAdapter
-							.getContextJobDetail(currentlyExecutingJob);
-					final String jobFullName = quartzAdapter.getJobFullName(jobDetail);
-					currentlyExecutingJobsByFullName.put(jobFullName, currentlyExecutingJob);
+					final String jobAndTriggerId = quartzAdapter
+							.getJobAndTriggerId(currentlyExecutingJob);
+					currentlyExecutingJobsByContextId.put(jobAndTriggerId, currentlyExecutingJob);
 				}
 				try {
 					for (final JobDetail jobDetail : quartzAdapter
 							.getAllJobsOfScheduler(scheduler)) {
-						final String jobFullName = quartzAdapter.getJobFullName(jobDetail);
-						final JobExecutionContext jobExecutionContext = currentlyExecutingJobsByFullName
-								.get(jobFullName);
-						result.add(new JobInformations(jobDetail, jobExecutionContext, scheduler));
+						result.add(new JobInformations(jobDetail, currentlyExecutingJobsByContextId,
+								scheduler));
 					}
 				} catch (final Exception e) {
 					// si les jobs sont persistés en base de données, il peut y avoir une exception
@@ -230,6 +217,10 @@ public class JobInformations implements Serializable {
 
 	public boolean isPaused() {
 		return paused;
+	}
+
+	public List<JobTriggerInformations> getTriggerInformations() {
+		return triggerInformations;
 	}
 
 	/** {@inheritDoc} */

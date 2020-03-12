@@ -21,9 +21,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
-import net.bull.javamelody.Parameter;
-import net.bull.javamelody.internal.common.LOG;
-
 import org.quartz.CronTrigger;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
@@ -35,9 +32,13 @@ import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.SimpleTrigger;
 import org.quartz.Trigger;
+import org.quartz.TriggerKey;
 import org.quartz.impl.StdSchedulerFactory;
 import org.quartz.impl.matchers.EverythingMatcher;
 import org.quartz.impl.matchers.GroupMatcher;
+
+import net.bull.javamelody.Parameter;
+import net.bull.javamelody.internal.common.LOG;
 
 /**
  * Classe ayant la même API, que le QuartzAdapter par défaut des versions avant 2,<br/>
@@ -79,6 +80,21 @@ class Quartz2Adapter extends QuartzAdapter {
 	}
 
 	@Override
+	String getTriggerName(Trigger trigger) {
+		return trigger.getKey().getName();
+	}
+
+	@Override
+	String getTriggerGroup(Trigger trigger) {
+		return trigger.getKey().getGroup();
+	}
+
+	@Override
+	String getTriggerDescription(Trigger trigger) {
+		return trigger.getDescription();
+	}
+
+	@Override
 	Date getTriggerPreviousFireTime(Trigger trigger) {
 		return trigger.getPreviousFireTime();
 	}
@@ -87,7 +103,7 @@ class Quartz2Adapter extends QuartzAdapter {
 	Date getTriggerNextFireTime(Trigger trigger) {
 		return trigger.getNextFireTime();
 	}
-	
+
 	@Override
 	String getCronTriggerExpression(CronTrigger trigger) {
 		// getCronExpression gives a PMD false+
@@ -102,6 +118,19 @@ class Quartz2Adapter extends QuartzAdapter {
 	@Override
 	public JobDetail getContextJobDetail(JobExecutionContext context) {
 		return context.getJobDetail();
+	}
+
+	@Override
+	public String getJobAndTriggerId(JobExecutionContext context) {
+		return getJobAndTriggerId(context.getTrigger());
+	}
+
+	@Override
+	public String getJobAndTriggerId(Trigger trigger) {
+		final JobKey jobKey = trigger.getJobKey();
+		final TriggerKey triggerKey = trigger.getKey();
+		return jobKey.getGroup() + "@" + jobKey.getName() + "#" + triggerKey.getGroup() + "@"
+				+ triggerKey.getName();
 	}
 
 	@Override

@@ -95,6 +95,22 @@ public class QuartzAdapter {
 		return jobDetail.getJobClass();
 	}
 
+	String getTriggerName(Trigger trigger) {
+		return trigger.getName();
+	}
+
+	String getTriggerGroup(Trigger trigger) {
+		return trigger.getGroup();
+	}
+
+	String getTriggerDescription(Trigger trigger) {
+		return trigger.getDescription();
+	}
+
+	public String getTriggerFullName(Trigger trigger) {
+		return getTriggerGroup(trigger) + '.' + getTriggerName(trigger);
+	}
+
 	Date getTriggerPreviousFireTime(Trigger trigger) {
 		return trigger.getPreviousFireTime();
 	}
@@ -114,6 +130,15 @@ public class QuartzAdapter {
 
 	public JobDetail getContextJobDetail(JobExecutionContext context) {
 		return context.getJobDetail();
+	}
+
+	public String getJobAndTriggerId(JobExecutionContext context) {
+		return getJobAndTriggerId(context.getTrigger());
+	}
+
+	public String getJobAndTriggerId(Trigger trigger) {
+		return trigger.getJobGroup() + '@' + trigger.getJobName() + '#' + trigger.getGroup() + '@'
+				+ trigger.getName();
 	}
 
 	Date getContextFireTime(JobExecutionContext context) {
